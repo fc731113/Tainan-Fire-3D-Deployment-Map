@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="icon" href="data:," />
   <title>臺南市政府消防局｜3D 火場佈署圖</title>
   <script>
     window.CESIUM_BASE_URL = "https://cdn.jsdelivr.net/npm/cesium@1.122.0/Build/Cesium/";
@@ -157,7 +158,6 @@
   <div class="toast" id="toastBox"></div>
 
   <script>
-    // 全域狀態與參數先宣告，避免初始化順序造成 ReferenceError
     let currentBuildingStyle = "height";
     let buildingTileset = null;
     let toolMode = null;
@@ -176,7 +176,6 @@
     const GAS_API_URL = params.get("gasUrl") || "";
     const rawTileset = (params.get("tileset") || "").trim();
     const INIT_TILESET = /^https?:\/\//i.test(rawTileset) ? rawTileset : "";
-    // 若有免費 Cesium ion Token 可在網址帶 ?ionToken=...，未帶則不打需授權的 ion 預設底圖
     const ION_TOKEN = (params.get("ionToken") || "").trim();
     if (ION_TOKEN && typeof Cesium !== "undefined") {
       Cesium.Ion.defaultAccessToken = ION_TOKEN;
@@ -209,7 +208,7 @@
       }
     }
 
-    // 2. 建立 NLSC WMTS PHOTO2 底圖（不依賴 Cesium ion Token，避免 401）
+    // 1. 串接 NLSC WMTS PHOTO2 正射航照底圖
     const nlscPhotoProvider = new Cesium.WebMapTileServiceImageryProvider({
       url: "https://wmts.nlsc.gov.tw/wmts/PHOTO2/{Style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}",
       layer: "PHOTO2",
@@ -236,12 +235,12 @@
       baseLayer: new Cesium.ImageryLayer(nlscPhotoProvider)
     });
 
-    viewer.scene.backgroundColor = Cesium.Color.fromCssString("#0f172a");
-    viewer.scene.globe.baseColor = Cesium.Color.fromCssString("#1e293b");
+    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#0f172a");
+    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#1e293b");
     viewer.scene.globe.depthTestAgainstTerrain = false;
     viewer.scene.shadows = false;
 
-    // 3. 3D 建物樣式與載入
+    // 2. 3D 建物樣式與載入
     function buildTileStyle(mode) {
       if (mode === "raw") {
         return new Cesium.Cesium3DTileStyle({
@@ -312,7 +311,7 @@
 
     if (INIT_TILESET) loadBuildingTileset(INIT_TILESET);
 
-    // 4. 起火點、消防栓三態柱體與風向煙羽
+    // 3. 起火點、消防栓三態柱體與風向煙羽
     function addFireOrigin(lat, lng) {
       const pos = Cesium.Cartesian3.fromDegrees(lng, lat, 0);
       const ent = viewer.entities.add({
@@ -329,7 +328,7 @@
           text: "🔥 起火點",
           font: "bold 13px sans-serif",
           fillColor: Cesium.Color.WHITE,
-          backgroundColor: Cesium.Color.fromCssString("#dc2626").withAlpha(0.9),
+          backgroundColor: Cesium.Color.fromCssColorString("#dc2626").withAlpha(0.9),
           showBackground: true,
           pixelOffset: new Cesium.Cartesian2(0, -26),
           disableDepthTestDistance: Number.POSITIVE_INFINITY
@@ -340,9 +339,9 @@
 
     const STATUS_CYCLE = ["FREE", "OCCUPIED", "UNAVAILABLE"];
     const STATUS_META = {
-      FREE:        { icon: "🟢", text: "未占用", color: Cesium.Color.fromCssString("#16a34a") },
-      OCCUPIED:    { icon: "🔵", text: "已佔用", color: Cesium.Color.fromCssString("#2563eb") },
-      UNAVAILABLE: { icon: "⛔", text: "無法用", color: Cesium.Color.fromCssString("#64748b") }
+      FREE:        { icon: "🟢", text: "未占用", color: Cesium.Color.fromCssColorString("#16a34a") },
+      OCCUPIED:    { icon: "🔵", text: "已佔用", color: Cesium.Color.fromCssColorString("#2563eb") },
+      UNAVAILABLE: { icon: "⛔", text: "無法用", color: Cesium.Color.fromCssColorString("#64748b") }
     };
 
     function addHydrantMarkers(hydrants) {
@@ -421,7 +420,7 @@
         position: Cesium.Cartesian3.fromDegrees(midLng, midLat, 18),
         ellipsoid: {
           radii: new Cesium.Cartesian3(26, 14, 10),
-          material: Cesium.Color.fromCssString("#cbd5e1").withAlpha(0.32)
+          material: Cesium.Color.fromCssColorString("#cbd5e1").withAlpha(0.32)
         }
       });
 
@@ -430,7 +429,7 @@
         `🌬️ 風向 ${Math.round(safeDeg)}° → 下風 ${Math.round(downwindDeg)}°（${safeSpeed.toFixed(1)} m/s）`;
     }
 
-    // 5. 戰術標繪工具
+    // 4. 戰術標繪工具
     function setToolMode(mode) {
       toolMode = (toolMode === mode) ? null : mode;
       hoseStartPos = null;
@@ -462,7 +461,7 @@
         position: pos,
         point: {
           pixelSize: 12,
-          color: Cesium.Color.fromCssString(cfg.bg),
+          color: Cesium.Color.fromCssColorString(cfg.bg),
           outlineColor: Cesium.Color.WHITE,
           outlineWidth: 2,
           disableDepthTestDistance: Number.POSITIVE_INFINITY
@@ -471,7 +470,7 @@
           text: cfg.text,
           font: "bold 12px sans-serif",
           fillColor: Cesium.Color.WHITE,
-          backgroundColor: Cesium.Color.fromCssString(cfg.bg).withAlpha(0.9),
+          backgroundColor: Cesium.Color.fromCssColorString(cfg.bg).withAlpha(0.9),
           showBackground: true,
           pixelOffset: new Cesium.Cartesian2(0, -18),
           disableDepthTestDistance: Number.POSITIVE_INFINITY
@@ -504,14 +503,14 @@
         polyline: {
           positions: [p1, p2],
           width: 4,
-          material: Cesium.Color.fromCssString("#38bdf8"),
+          material: Cesium.Color.fromCssColorString("#38bdf8"),
           clampToGround: true
         },
         label: {
           text: `〰️ ${Math.round(distM)}m（約 ${count20m} 條水帶）`,
           font: "bold 11px sans-serif",
           fillColor: Cesium.Color.WHITE,
-          backgroundColor: Cesium.Color.fromCssString("#0369a1").withAlpha(0.92),
+          backgroundColor: Cesium.Color.fromCssColorString("#0369a1").withAlpha(0.92),
           showBackground: true,
           disableDepthTestDistance: Number.POSITIVE_INFINITY
         },
@@ -566,7 +565,7 @@
       placeVehicleOrCmd(carto, toolMode);
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
-    // 6. 快捷視角與截圖
+    // 5. 快捷視角與截圖
     function flyPreset(dir) {
       const target = Cesium.Cartesian3.fromDegrees(INIT_LNG, INIT_LAT, 0);
       const presets = {
@@ -597,7 +596,7 @@
       }
     }
 
-    // 7. 載入氣象與場次資料
+    // 6. 載入氣象與場次資料
     async function fetchWithTimeout(url, timeoutMs = 4500) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
