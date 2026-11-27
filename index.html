@@ -187,7 +187,7 @@
     const rawTileset = (params.get("tileset") || "").trim();
     const INIT_TILESET = /^https?:\/\//i.test(rawTileset)
   ? rawTileset
-  : "https://tainan-nlsc-proxy.fc731113.workers.dev/building/tiles3d/0/tileset.json";
+  : "https://tainan-nlsc-proxy.fc731113.workers.dev/building/tiles3d/3/tileset.json";
     const ION_TOKEN = (params.get("ionToken") || "").trim();
     if (ION_TOKEN && typeof Cesium !== "undefined") {
       Cesium.Ion.defaultAccessToken = ION_TOKEN;
@@ -314,9 +314,7 @@
   skipLevelOfDetail: true,
   immediatelyLoadDesiredLevelOfDetail: true,
   loadSiblings: false,
-  maximumScreenSpaceError: 16,
-  skipScreenSpaceErrorFactor: 16,
-  skipLevels: 2
+  maximumScreenSpaceError: 16
 });
         ts.style = buildTileStyle(currentBuildingStyle);
         let warnedTileErr = false;
