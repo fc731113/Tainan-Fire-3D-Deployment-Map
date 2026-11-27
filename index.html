@@ -167,7 +167,7 @@
     const DEFAULT_GAS_API_URL = "https://script.google.com/macros/s/AKfycbxEdKAOyQAbIv--NK-gwihDZ77YdmtZ5wpFajLsneWF9I_YhHyE_200b5ChlGaFGw2I/exec";
     const DEFAULT_API_TOKEN = "";
     const NLSC_PROXY_BASE = "https://tainan-nlsc-proxy.fc731113.workers.dev";
-    const DEFAULT_TAINAN_TILESET = `${NLSC_PROXY_BASE}/3dtiles/building/tiles3d/3/tileset.json`;
+    const DEFAULT_TAINAN_TILESET = `${NLSC_PROXY_BASE}/building/tiles3d/3/tileset.json`;
 
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
@@ -227,16 +227,16 @@
       }
     }
 
-    // 1. 串接 NLSC WMTS PHOTO_MIX（透過 Worker /wmts/ 代理，支援 Canvas 一鍵截圖）
+    // 1. 直連 NLSC WMTS PHOTO_MIX（空拍影像＋中文路名＋地標），減輕 Worker 負擔
     const nlscPhotoProvider = new Cesium.WebMapTileServiceImageryProvider({
-  url: "https://wmts.nlsc.gov.tw/wmts/PHOTO_MIX/default/GoogleMapsCompatible/{TileMatrix}/{TileRow}/{TileCol}",
-  layer: "PHOTO_MIX",
-  style: "default",
-  format: "image/jpeg",
-  tileMatrixSetID: "GoogleMapsCompatible",
-  maximumLevel: 20,
-  credit: "內政部國土測繪中心 NLSC PHOTO_MIX"
-});
+      url: "https://wmts.nlsc.gov.tw/wmts/PHOTO_MIX/default/GoogleMapsCompatible/{TileMatrix}/{TileRow}/{TileCol}",
+      layer: "PHOTO_MIX",
+      style: "default",
+      format: "image/jpeg",
+      tileMatrixSetID: "GoogleMapsCompatible",
+      maximumLevel: 20,
+      credit: "內政部國土測繪中心 NLSC PHOTO_MIX"
+    });
 
     const viewer = new Cesium.Viewer("cesiumContainer", {
       animation: false,
@@ -391,7 +391,7 @@
 
       const codes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
       const results = await Promise.all(codes.map(async (code) => {
-        const url = `${NLSC_PROXY_BASE}/3dtiles/building/tiles3d/${code}/tileset.json`;
+        const url = `${NLSC_PROXY_BASE}/building/tiles3d/${code}/tileset.json`;
         try {
           const res = await fetchWithTimeout(url, 6000);
           if (!res.ok) return { code, ok: false, status: `HTTP ${res.status}`, url };
@@ -429,7 +429,7 @@
       box.style.display = "block";
       box.innerHTML = "⏳ 正在讀取 NLSC 官方 /tiles3d/Service 清單...";
       try {
-        const res = await fetchWithTimeout(`${NLSC_PROXY_BASE}/3dtiles/tiles3d/Service`, 8000);
+        const res = await fetchWithTimeout(`${NLSC_PROXY_BASE}/tiles3d/Service`, 8000);
         const text = await res.text();
         let items = [];
         try {
@@ -443,7 +443,7 @@
             const rawStr = JSON.stringify(it);
             const name = it.name || it.title || it.Name || it.LayerName || "未命名圖層";
             const rawUrl = it.url || it.URL || it.href || "";
-            const proxyUrl = rawUrl.replace(/^https?:\/\/3dtiles\.nlsc\.gov\.tw/i, `${NLSC_PROXY_BASE}/3dtiles`);
+            const proxyUrl = rawUrl.replace(/^https?:\/\/3dtiles\.nlsc\.gov\.tw/i, NLSC_PROXY_BASE);
             const highlight = /臺南|台南|Tainan/i.test(rawStr) ? "color:#facc15;font-weight:700;" : "";
             const loadBtn = proxyUrl
               ? `<button class="tool-btn" style="padding:2px 6px;" onclick="loadScannedUrl('${proxyUrl}')">套用</button>`
@@ -826,7 +826,7 @@
       if (SESSION_ID) qs.set("sessionId", SESSION_ID);
       else qs.set("index", SESSION_INDEX);
       if (API_TOKEN) qs.set("token", API_TOKEN);
-      qs.set("_t", String(Date.now())); // 避免 iOS Safari 快取 15 秒輪詢結果
+      qs.set("_t", String(Date.now()));
 
       try {
         const res = await fetchWithTimeout(`${GAS_API_URL}?${qs.toString()}`);
