@@ -121,11 +121,16 @@
       <button class="tool-btn" id="styleRawBtn" onclick="setBuildingStyle('raw')">原始白模</button>
     </div>
 
-    <span class="sec-label">NLSC 3D Tiles 網址（臺南 LOD1）</span>
+    <span class="sec-label">NLSC 3D Tiles 網址（臺南代碼 3）</span>
     <div class="tiles-input-row">
       <input id="tilesetUrlInput" type="text" placeholder="貼上臺南 3D tileset.json 網址" />
       <button class="tool-btn" onclick="applyCustomTileset()">載入</button>
     </div>
+    <div class="btn-row">
+      <button class="tool-btn" id="scanNlscBtn" onclick="scanNlscCodes()">🔍 測試代碼 1~10</button>
+      <button class="tool-btn" onclick="fetchNlscServiceList()">📋 讀官方清單</button>
+    </div>
+    <div class="info-box" id="nlscScanResult" style="display:none; max-height:150px; overflow-y:auto;"></div>
 
     <span class="sec-label">戰術部署標繪</span>
     <div class="btn-row">
@@ -158,9 +163,13 @@
   <div class="toast" id="toastBox"></div>
 
   <script>
-    // ======================== 系統設定（請填入你的 GAS v4.2.9 部署網址） ========================
+    // ======================== 系統設定 ========================
     const DEFAULT_GAS_API_URL = "https://script.google.com/macros/s/AKfycbxEdKAOyQAbIv--NK-gwihDZ77YdmtZ5wpFajLsneWF9I_YhHyE_200b5ChlGaFGw2I/exec";
-    const DEFAULT_API_TOKEN = ""; // 若 GAS 指令碼屬性有設 WEB_3D_API_TOKEN 再填入，沒有請留空
+    const DEFAULT_API_TOKEN = "";
+    const NLSC_PROXY_BASE = "https://tainan-nlsc-proxy.fc731113.workers.dev";
+    const DEFAULT_TAINAN_TILESET = `${NLSC_PROXY_BASE}/building/tiles3d/3/tileset.json`;
+
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
     let currentBuildingStyle = "height";
     let buildingTileset = null;
@@ -185,9 +194,7 @@
     const API_TOKEN = (params.get("token") || DEFAULT_API_TOKEN).trim();
 
     const rawTileset = (params.get("tileset") || "").trim();
-    const INIT_TILESET = /^https?:\/\//i.test(rawTileset)
-  ? rawTileset
-  : "https://tainan-nlsc-proxy.fc731113.workers.dev/building/tiles3d/3/tileset.json";
+    const INIT_TILESET = /^https?:\/\//i.test(rawTileset) ? rawTileset : DEFAULT_TAINAN_TILESET;
     const ION_TOKEN = (params.get("ionToken") || "").trim();
     if (ION_TOKEN && typeof Cesium !== "undefined") {
       Cesium.Ion.defaultAccessToken = ION_TOKEN;
@@ -250,18 +257,15 @@
     viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#1e293b");
     viewer.scene.globe.depthTestAgainstTerrain = false;
     viewer.scene.shadows = false;
+    // 手機端強制 1 倍渲染解析度，避免高解析度螢幕撐爆 Safari WebGL 記憶體
+    viewer.resolutionScale = isMobile ? 1.0 : Math.min(window.devicePixelRatio || 1, 1.5);
 
-    // 2. 3D 建物樣式與載入
+    // 2. 3D 建物樣式與載入（含缺 height 屬性防呆與 iOS 記憶體控制）
     function buildTileStyle(mode) {
       if (mode === "raw") {
-        return new Cesium.Cesium3DTileStyle({
-          color: "color('#e2e8f0', 0.82)"
-        });
+        return new Cesium.Cesium3DTileStyle({ color: "color('#e2e8f0', 0.82)" });
       }
-
-      // 安全讀取高度屬性：若 height 與 HEIGHT 皆為 undefined，自動帶入 0 避免渲染中斷
       const safeHeightExpr = "(${height} !== undefined ? ${height} : (${HEIGHT} !== undefined ? ${HEIGHT} : 0))";
-
       if (mode === "tactical") {
         return new Cesium.Cesium3DTileStyle({
           defines: { h: safeHeightExpr },
@@ -274,7 +278,6 @@
           }
         });
       }
-
       return new Cesium.Cesium3DTileStyle({
         defines: { h: safeHeightExpr },
         color: {
@@ -297,7 +300,6 @@
       showToast("已切換建物樣式：" + ({ height: "高度分色", tactical: "戰術降噪", raw: "原始白模" }[mode] || mode));
     }
 
-    // 替換原本的 loadBuildingTileset 函式
     async function loadBuildingTileset(url) {
       if (buildingTileset) {
         viewer.scene.primitives.remove(buildingTileset);
@@ -311,11 +313,16 @@
       }
       try {
         const ts = await Cesium.Cesium3DTileset.fromUrl(cleanUrl, {
-  skipLevelOfDetail: true,
-  immediatelyLoadDesiredLevelOfDetail: true,
-  loadSiblings: false,
-  maximumScreenSpaceError: 16
-});
+          skipLevelOfDetail: true,
+          immediatelyLoadDesiredLevelOfDetail: false,
+          loadSiblings: false,
+          cullRequestsWhileMoving: true,
+          cullRequestsWhileMovingMultiplier: 60,
+          dynamicScreenSpaceError: true,
+          maximumScreenSpaceError: isMobile ? 32 : 16,
+          cacheBytes: isMobile ? 64 * 1024 * 1024 : 256 * 1024 * 1024,
+          maximumCacheOverflowBytes: isMobile ? 32 * 1024 * 1024 : 128 * 1024 * 1024
+        });
         ts.style = buildTileStyle(currentBuildingStyle);
         let warnedTileErr = false;
         ts.tileFailed.addEventListener((err) => {
@@ -326,28 +333,10 @@
         });
         viewer.scene.primitives.add(ts);
         buildingTileset = ts;
-        showToast("已載入 3D Tiles 索引，正在下載建物模型...");
+        showToast("已載入 3D 建物圖層");
       } catch (err) {
         console.error(err);
         showToast("3D Tiles 載入失敗（請檢查網址或代理設定）");
-      }
-    }
-
-    // 新增：載入 Cesium OSM 3D 建築物（需搭配 Cesium Ion Token）
-    async function loadOsmBuildings() {
-      if (buildingTileset) {
-        viewer.scene.primitives.remove(buildingTileset);
-        buildingTileset = null;
-      }
-      try {
-        const osmTs = await Cesium.createOsmBuildingsAsync();
-        osmTs.style = buildTileStyle(currentBuildingStyle);
-        viewer.scene.primitives.add(osmTs);
-        buildingTileset = osmTs;
-        showToast("已載入 OSM 3D 建築物圖層");
-      } catch (err) {
-        console.error(err);
-        showToast("OSM 3D 建物載入失敗（請確認已設定 Ion Token）");
       }
     }
 
@@ -355,9 +344,116 @@
       loadBuildingTileset(document.getElementById("tilesetUrlInput").value.trim());
     }
 
-    if (INIT_TILESET) loadBuildingTileset(INIT_TILESET);
+    function loadScannedUrl(url) {
+      document.getElementById("tilesetUrlInput").value = url;
+      loadBuildingTileset(url);
+    }
 
-    // 3. 清除並重繪系統同步圖層（保留使用者手動標繪的 customEntities）
+    function extractTilesetCenter(json) {
+      const target = (json && json.root && Array.isArray(json.root.children) && json.root.children[0])
+        ? json.root.children[0].boundingVolume
+        : (json && json.root ? json.root.boundingVolume : null);
+      if (!target) return null;
+
+      if (Array.isArray(target.sphere) && target.sphere.length >= 3) {
+        const [x, y, z] = target.sphere;
+        const rxy = Math.hypot(x, y);
+        if (rxy > 1000) {
+          return {
+            lat: (Math.atan2(z, rxy) * 180) / Math.PI,
+            lng: (Math.atan2(y, x) * 180) / Math.PI
+          };
+        }
+      }
+      if (Array.isArray(target.region) && target.region.length >= 4) {
+        const [w, s, e, n] = target.region;
+        return {
+          lat: (((s + n) / 2) * 180) / Math.PI,
+          lng: (((w + e) / 2) * 180) / Math.PI
+        };
+      }
+      return null;
+    }
+
+    async function scanNlscCodes() {
+      const box = document.getElementById("nlscScanResult");
+      const btn = document.getElementById("scanNlscBtn");
+      box.style.display = "block";
+      box.innerHTML = "⏳ 正在平行測試代碼 1～10...";
+      btn.disabled = true;
+
+      const codes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+      const results = await Promise.all(codes.map(async (code) => {
+        const url = `${NLSC_PROXY_BASE}/building/tiles3d/${code}/tileset.json`;
+        try {
+          const res = await fetchWithTimeout(url, 6000);
+          if (!res.ok) return { code, ok: false, status: `HTTP ${res.status}`, url };
+          const text = await res.text();
+          if (text.trim().startsWith("<") || text.includes("不存在")) {
+            return { code, ok: false, status: "圖層不存在或異常", url };
+          }
+          const json = JSON.parse(text);
+          if (!json || !json.root) return { code, ok: false, status: "非有效 tileset", url };
+          const center = extractTilesetCenter(json);
+          const isTainan = center && center.lat >= 22.8 && center.lat <= 23.5 && center.lng >= 119.9 && center.lng <= 120.7;
+          return { code, ok: true, center, isTainan, url };
+        } catch (err) {
+          return { code, ok: false, status: "逾時/錯誤", url };
+        }
+      }));
+
+      btn.disabled = false;
+      box.innerHTML = results.map(r => {
+        if (!r.ok) {
+          return `<div style="color:#94a3b8;">代碼 ${r.code}：❌ ${r.status}</div>`;
+        }
+        const coordStr = r.center ? `(${r.center.lat.toFixed(2)}, ${r.center.lng.toFixed(2)})` : "";
+        const tag = r.isTainan ? `<b style="color:#facc15;">🎯臺南</b>` : `✅可用`;
+        return `<div style="margin:3px 0; display:flex; justify-content:space-between; align-items:center; gap:4px;">
+          <span>代碼 ${r.code} ${tag} ${coordStr}</span>
+          <button class="tool-btn" style="padding:2px 6px;" onclick="loadScannedUrl('${r.url}')">套用</button>
+        </div>`;
+      }).join("");
+      showToast("代碼 1～10 掃描完成");
+    }
+
+    async function fetchNlscServiceList() {
+      const box = document.getElementById("nlscScanResult");
+      box.style.display = "block";
+      box.innerHTML = "⏳ 正在讀取 NLSC 官方 /tiles3d/Service 清單...";
+      try {
+        const res = await fetchWithTimeout(`${NLSC_PROXY_BASE}/tiles3d/Service`, 8000);
+        const text = await res.text();
+        let items = [];
+        try {
+          const data = JSON.parse(text);
+          const arr = Array.isArray(data) ? data : (data.services || data.list || Object.values(data));
+          items = arr.filter(x => x && typeof x === "object");
+        } catch (_) {}
+
+        if (items.length > 0) {
+          box.innerHTML = items.map(it => {
+            const rawStr = JSON.stringify(it);
+            const name = it.name || it.title || it.Name || it.LayerName || "未命名圖層";
+            const rawUrl = it.url || it.URL || it.href || "";
+            const proxyUrl = rawUrl.replace(/^https?:\/\/3dtiles\.nlsc\.gov\.tw/i, NLSC_PROXY_BASE);
+            const highlight = /臺南|台南|Tainan/i.test(rawStr) ? "color:#facc15;font-weight:700;" : "";
+            const loadBtn = proxyUrl
+              ? `<button class="tool-btn" style="padding:2px 6px;" onclick="loadScannedUrl('${proxyUrl}')">套用</button>`
+              : "";
+            return `<div style="margin:3px 0; display:flex; justify-content:space-between; gap:4px; ${highlight}">
+              <span>${name}</span>${loadBtn}
+            </div>`;
+          }).join("");
+        } else {
+          box.textContent = text.slice(0, 600) || "清單回傳為空";
+        }
+      } catch (err) {
+        box.textContent = `讀取清單失敗：${err.message}`;
+      }
+    }
+
+    // 3. 清除並重繪系統同步圖層
     function clearTacticalEntities() {
       while (tacticalEntities.length > 0) {
         viewer.entities.remove(tacticalEntities.pop());
@@ -675,7 +771,7 @@
       }
     }
 
-    // 6. 串接 GAS v4.2.9 真實火場 API（支援 15 秒即時輪詢與 stateHash 防閃爍）
+    // 6. 串接 GAS v4.2.9 真實火場 API
     async function fetchWithTimeout(url, timeoutMs = 8000) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -737,7 +833,6 @@
           return;
         }
 
-        // 狀態無異動時跳過重繪
         if (!isInitial && sJson.stateHash && sJson.stateHash === lastStateHash) return;
         lastStateHash = sJson.stateHash || "";
 
@@ -773,9 +868,12 @@
       }
     }
 
-    // 啟動首次載入與每 15 秒即時輪詢
+    // 先飛往真實火場定位，延遲 1.5 秒再載入 3D 建物，降低 iOS 記憶體尖峰
     syncSceneFromGas(true);
     setInterval(() => syncSceneFromGas(false), 15000);
+    if (INIT_TILESET) {
+      setTimeout(() => loadBuildingTileset(INIT_TILESET), 1500);
+    }
   </script>
 </body>
 </html>
