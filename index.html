@@ -310,7 +310,14 @@
         return;
       }
       try {
-        const ts = await Cesium.Cesium3DTileset.fromUrl(cleanUrl);
+        const ts = await Cesium.Cesium3DTileset.fromUrl(cleanUrl, {
+  skipLevelOfDetail: true,
+  immediatelyLoadDesiredLevelOfDetail: true,
+  loadSiblings: false,
+  maximumScreenSpaceError: 16,
+  skipScreenSpaceErrorFactor: 16,
+  skipLevels: 2
+});
         ts.style = buildTileStyle(currentBuildingStyle);
         let warnedTileErr = false;
         ts.tileFailed.addEventListener((err) => {
