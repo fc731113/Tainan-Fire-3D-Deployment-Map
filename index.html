@@ -229,14 +229,14 @@
 
     // 1. 串接 NLSC WMTS PHOTO_MIX（透過 Worker /wmts/ 代理，支援 Canvas 一鍵截圖）
     const nlscPhotoProvider = new Cesium.WebMapTileServiceImageryProvider({
-      url: `${NLSC_PROXY_BASE}/wmts/wmts/PHOTO_MIX/default/GoogleMapsCompatible/{TileMatrix}/{TileRow}/{TileCol}`,
-      layer: "PHOTO_MIX",
-      style: "default",
-      format: "image/jpeg",
-      tileMatrixSetID: "GoogleMapsCompatible",
-      maximumLevel: 20,
-      credit: "內政部國土測繪中心 NLSC PHOTO_MIX"
-    });
+  url: "https://wmts.nlsc.gov.tw/wmts/PHOTO_MIX/default/GoogleMapsCompatible/{TileMatrix}/{TileRow}/{TileCol}",
+  layer: "PHOTO_MIX",
+  style: "default",
+  format: "image/jpeg",
+  tileMatrixSetID: "GoogleMapsCompatible",
+  maximumLevel: 20,
+  credit: "內政部國土測繪中心 NLSC PHOTO_MIX"
+});
 
     const viewer = new Cesium.Viewer("cesiumContainer", {
       animation: false,
