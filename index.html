@@ -297,6 +297,7 @@
       showToast("已切換建物樣式：" + ({ height: "高度分色", tactical: "戰術降噪", raw: "原始白模" }[mode] || mode));
     }
 
+    // 替換原本的 loadBuildingTileset 函式
     async function loadBuildingTileset(url) {
       if (buildingTileset) {
         viewer.scene.primitives.remove(buildingTileset);
@@ -311,12 +312,37 @@
       try {
         const ts = await Cesium.Cesium3DTileset.fromUrl(cleanUrl);
         ts.style = buildTileStyle(currentBuildingStyle);
+        let warnedTileErr = false;
+        ts.tileFailed.addEventListener((err) => {
+          if (!warnedTileErr) {
+            warnedTileErr = true;
+            showToast(`⚠️ 子圖磚載入失敗：${err.message || "無此區圖資"}`);
+          }
+        });
         viewer.scene.primitives.add(ts);
         buildingTileset = ts;
-        showToast("已載入 3D 建物圖層");
+        showToast("已載入 3D Tiles 索引，正在下載建物模型...");
       } catch (err) {
         console.error(err);
-        showToast("3D Tiles 載入失敗（若遇 CORS 需經代理）");
+        showToast("3D Tiles 載入失敗（請檢查網址或代理設定）");
+      }
+    }
+
+    // 新增：載入 Cesium OSM 3D 建築物（需搭配 Cesium Ion Token）
+    async function loadOsmBuildings() {
+      if (buildingTileset) {
+        viewer.scene.primitives.remove(buildingTileset);
+        buildingTileset = null;
+      }
+      try {
+        const osmTs = await Cesium.createOsmBuildingsAsync();
+        osmTs.style = buildTileStyle(currentBuildingStyle);
+        viewer.scene.primitives.add(osmTs);
+        buildingTileset = osmTs;
+        showToast("已載入 OSM 3D 建築物圖層");
+      } catch (err) {
+        console.error(err);
+        showToast("OSM 3D 建物載入失敗（請確認已設定 Ion Token）");
       }
     }
 
