@@ -260,6 +260,10 @@
     viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#1e293b");
     viewer.scene.globe.depthTestAgainstTerrain = false;
     viewer.scene.shadows = false;
+    // 鎖定光照為台灣夏季上午 10:30（UTC 02:30），確保半夜出勤 3D 建物依然明亮且具立體層次
+    viewer.clock.currentTime = Cesium.JulianDate.fromIso8601("2026-06-21T02:30:00Z");
+    viewer.clock.shouldAnimate = false;
+    viewer.scene.light = new Cesium.SunLight({ intensity: 2.2 });
     // 手機端強制 1 倍渲染解析度，避免高解析度螢幕撐爆 Safari WebGL 記憶體
     viewer.resolutionScale = isMobile ? 1.0 : Math.min(window.devicePixelRatio || 1, 1.5);
 
