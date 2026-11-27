@@ -158,22 +158,32 @@
   <div class="toast" id="toastBox"></div>
 
   <script>
+    // ======================== 系統設定（請填入你的 GAS v4.2.9 部署網址） ========================
+    const DEFAULT_GAS_API_URL = "https://script.google.com/macros/s/AKfycbxEdKAOyQAbIv--NK-gwihDZ77YdmtZ5wpFajLsneWF9I_YhHyE_200b5ChlGaFGw2I/exec";
+    const DEFAULT_API_TOKEN = ""; // 若 GAS 指令碼屬性有設 WEB_3D_API_TOKEN 再填入，沒有請留空
+
     let currentBuildingStyle = "height";
     let buildingTileset = null;
     let toolMode = null;
     let hoseStartPos = null;
     let toastTimer = null;
+    let lastStateHash = "";
     const tacticalEntities = [];
     const customEntities = [];
 
     const params = new URLSearchParams(window.location.search);
     const parsedLat = parseFloat(params.get("lat"));
     const parsedLng = parseFloat(params.get("lng"));
-    const INIT_LAT = Number.isFinite(parsedLat) ? parsedLat : 23.0482;
-    const INIT_LNG = Number.isFinite(parsedLng) ? parsedLng : 120.1856;
-    const SCENE_LABEL = params.get("label") || `起火點 (${INIT_LAT.toFixed(4)}, ${INIT_LNG.toFixed(4)})`;
-    const CHAT_ID = params.get("chatId") || "";
-    const GAS_API_URL = params.get("gasUrl") || "";
+    let currentLat = Number.isFinite(parsedLat) ? parsedLat : 23.0482;
+    let currentLng = Number.isFinite(parsedLng) ? parsedLng : 120.1856;
+    const INIT_LABEL = params.get("label") || `起火點 (${currentLat.toFixed(4)}, ${currentLng.toFixed(4)})`;
+
+    const CHAT_ID = (params.get("chatId") || "").trim();
+    const SESSION_ID = (params.get("sessionId") || "").trim();
+    const SESSION_INDEX = (params.get("index") || "1").trim();
+    const GAS_API_URL = (params.get("gasUrl") || DEFAULT_GAS_API_URL).trim();
+    const API_TOKEN = (params.get("token") || DEFAULT_API_TOKEN).trim();
+
     const rawTileset = (params.get("tileset") || "").trim();
     const INIT_TILESET = /^https?:\/\//i.test(rawTileset) ? rawTileset : "";
     const ION_TOKEN = (params.get("ionToken") || "").trim();
@@ -181,7 +191,7 @@
       Cesium.Ion.defaultAccessToken = ION_TOKEN;
     }
 
-    document.getElementById("sceneTitle").textContent = SCENE_LABEL;
+    document.getElementById("sceneTitle").textContent = INIT_LABEL;
     document.getElementById("tilesetUrlInput").value = INIT_TILESET;
 
     function showToast(msg) {
@@ -208,16 +218,16 @@
       }
     }
 
-    // 1. 串接 NLSC WMTS PHOTO2 正射航照底圖
+    // 1. 串接 NLSC WMTS PHOTO_MIX（空拍影像＋中文路名＋地標）
     const nlscPhotoProvider = new Cesium.WebMapTileServiceImageryProvider({
-  url: "https://wmts.nlsc.gov.tw/wmts/PHOTO_MIX/default/GoogleMapsCompatible/{TileMatrix}/{TileRow}/{TileCol}",
-  layer: "PHOTO_MIX",
-  style: "default",
-  format: "image/jpeg",
-  tileMatrixSetID: "GoogleMapsCompatible",
-  maximumLevel: 20,
-  credit: "內政部國土測繪中心 NLSC PHOTO_MIX"
-});
+      url: "https://wmts.nlsc.gov.tw/wmts/PHOTO_MIX/default/GoogleMapsCompatible/{TileMatrix}/{TileRow}/{TileCol}",
+      layer: "PHOTO_MIX",
+      style: "default",
+      format: "image/jpeg",
+      tileMatrixSetID: "GoogleMapsCompatible",
+      maximumLevel: 20,
+      credit: "內政部國土測繪中心 NLSC PHOTO_MIX"
+    });
 
     const viewer = new Cesium.Viewer("cesiumContainer", {
       animation: false,
@@ -234,25 +244,15 @@
       baseLayer: new Cesium.ImageryLayer(nlscPhotoProvider)
     });
 
-    viewer.imageryLayers.removeAll();
-viewer.imageryLayers.addImageryProvider(
-  new Cesium.WebMapTileServiceImageryProvider({
-    url: "https://wmts.nlsc.gov.tw/wmts/PHOTO_MIX/default/GoogleMapsCompatible/{TileMatrix}/{TileRow}/{TileCol}",
-    layer: "PHOTO_MIX",
-    style: "default",
-    format: "image/jpeg",
-    tileMatrixSetID: "GoogleMapsCompatible",
-    maximumLevel: 20,
-    credit: "內政部國土測繪中心 NLSC PHOTO_MIX"
-  })
-);
+    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#0f172a");
+    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#1e293b");
+    viewer.scene.globe.depthTestAgainstTerrain = false;
+    viewer.scene.shadows = false;
 
     // 2. 3D 建物樣式與載入
     function buildTileStyle(mode) {
       if (mode === "raw") {
-        return new Cesium.Cesium3DTileStyle({
-          color: "color('#e2e8f0', 0.72)"
-        });
+        return new Cesium.Cesium3DTileStyle({ color: "color('#e2e8f0', 0.72)" });
       }
       if (mode === "tactical") {
         return new Cesium.Cesium3DTileStyle({
@@ -282,9 +282,7 @@ viewer.imageryLayers.addImageryProvider(
         const btn = document.getElementById("style" + k.charAt(0).toUpperCase() + k.slice(1) + "Btn");
         if (btn) btn.classList.toggle("active", k === mode);
       });
-      if (buildingTileset) {
-        buildingTileset.style = buildTileStyle(mode);
-      }
+      if (buildingTileset) buildingTileset.style = buildTileStyle(mode);
       showToast("已切換建物樣式：" + ({ height: "高度分色", tactical: "戰術降噪", raw: "原始白模" }[mode] || mode));
     }
 
@@ -312,14 +310,19 @@ viewer.imageryLayers.addImageryProvider(
     }
 
     function applyCustomTileset() {
-      const val = document.getElementById("tilesetUrlInput").value.trim();
-      loadBuildingTileset(val);
+      loadBuildingTileset(document.getElementById("tilesetUrlInput").value.trim());
     }
 
     if (INIT_TILESET) loadBuildingTileset(INIT_TILESET);
 
-    // 3. 起火點、消防栓三態柱體與風向煙羽
-    function addFireOrigin(lat, lng) {
+    // 3. 清除並重繪系統同步圖層（保留使用者手動標繪的 customEntities）
+    function clearTacticalEntities() {
+      while (tacticalEntities.length > 0) {
+        viewer.entities.remove(tacticalEntities.pop());
+      }
+    }
+
+    function addFireOrigin(lat, lng, labelText) {
       const pos = Cesium.Cartesian3.fromDegrees(lng, lat, 0);
       const ent = viewer.entities.add({
         position: pos,
@@ -332,7 +335,7 @@ viewer.imageryLayers.addImageryProvider(
           outlineColor: Cesium.Color.YELLOW
         },
         label: {
-          text: "🔥 起火點",
+          text: labelText ? `🔥 ${labelText}` : "🔥 起火點",
           font: "bold 13px sans-serif",
           fillColor: Cesium.Color.WHITE,
           backgroundColor: Cesium.Color.fromCssColorString("#dc2626").withAlpha(0.9),
@@ -353,14 +356,16 @@ viewer.imageryLayers.addImageryProvider(
 
     function addHydrantMarkers(hydrants) {
       hydrants.slice(0, 13).forEach((h, idx) => {
-        const num = idx + 1;
+        const num = h.slot || (idx + 1);
         let stCode = h.status || "FREE";
+        let unitText = h.unit || (h.statusLabel ? String(h.statusLabel).replace(/^已佔用｜?/, "").trim() : "");
+        if (stCode === "FREE") unitText = "";
         const pos = Cesium.Cartesian3.fromDegrees(h.lng, h.lat, 0);
 
         const updateVisual = (entity) => {
           const meta = STATUS_META[stCode] || STATUS_META.FREE;
           entity.cylinder.material = meta.color.withAlpha(0.88);
-          entity.label.text = `${meta.icon}#${num} ${h.unit || meta.text}`;
+          entity.label.text = `${meta.icon}#${num} ${unitText || meta.text}`;
           entity.label.backgroundColor = meta.color.withAlpha(0.92);
         };
 
@@ -389,12 +394,40 @@ viewer.imageryLayers.addImageryProvider(
         ent._cycleStatus = () => {
           const nextIdx = (STATUS_CYCLE.indexOf(stCode) + 1) % STATUS_CYCLE.length;
           stCode = STATUS_CYCLE[nextIdx];
-          h.unit = "";
+          unitText = "";
           updateVisual(ent);
           showToast(`#${num} 號栓已切換為：${STATUS_META[stCode].icon} ${STATUS_META[stCode].text}`);
         };
 
         updateVisual(ent);
+        tacticalEntities.push(ent);
+      });
+    }
+
+    function addTacticalMarkers(markers) {
+      (markers || []).forEach(m => {
+        if (!isFinite(m.lat) || !isFinite(m.lng)) return;
+        const bgHex = (m.style && m.style.bg) ? m.style.bg : "#6A1B9A";
+        const fgHex = (m.style && m.style.fg) ? m.style.fg : "#FFFFFF";
+        const ent = viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(m.lng, m.lat, 1),
+          point: {
+            pixelSize: 13,
+            color: Cesium.Color.fromCssColorString(bgHex),
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: 2,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY
+          },
+          label: {
+            text: `${m.icon || "📌"} ${m.name}`,
+            font: "bold 12px sans-serif",
+            fillColor: Cesium.Color.fromCssColorString(fgHex),
+            backgroundColor: Cesium.Color.fromCssColorString(bgHex).withAlpha(0.92),
+            showBackground: true,
+            pixelOffset: new Cesium.Cartesian2(0, -18),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY
+          }
+        });
         tacticalEntities.push(ent);
       });
     }
@@ -412,10 +445,7 @@ viewer.imageryLayers.addImageryProvider(
 
       const arrow = viewer.entities.add({
         polyline: {
-          positions: Cesium.Cartesian3.fromDegreesArrayHeights([
-            lng, lat, 16,
-            endLng, endLat, 22
-          ]),
+          positions: Cesium.Cartesian3.fromDegreesArrayHeights([lng, lat, 16, endLng, endLat, 22]),
           width: 5,
           material: new Cesium.PolylineArrowMaterialProperty(Cesium.Color.CYAN)
         }
@@ -574,13 +604,13 @@ viewer.imageryLayers.addImageryProvider(
 
     // 5. 快捷視角與截圖
     function flyPreset(dir) {
-      const target = Cesium.Cartesian3.fromDegrees(INIT_LNG, INIT_LAT, 0);
+      const target = Cesium.Cartesian3.fromDegrees(currentLng, currentLat, 0);
       const presets = {
-        top: { heading: 0, pitch: -89, range: 240 },
-        N:   { heading: Cesium.Math.toRadians(180), pitch: -35, range: 230 },
-        E:   { heading: Cesium.Math.toRadians(270), pitch: -35, range: 230 },
-        S:   { heading: Cesium.Math.toRadians(0),   pitch: -35, range: 230 },
-        W:   { heading: Cesium.Math.toRadians(90),  pitch: -35, range: 230 }
+        top: { heading: 0, pitch: -89, range: 260 },
+        N:   { heading: Cesium.Math.toRadians(180), pitch: -35, range: 240 },
+        E:   { heading: Cesium.Math.toRadians(270), pitch: -35, range: 240 },
+        S:   { heading: Cesium.Math.toRadians(0),   pitch: -35, range: 240 },
+        W:   { heading: Cesium.Math.toRadians(90),  pitch: -35, range: 240 }
       };
       const cfg = presets[dir] || presets.top;
       viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(target, 1), {
@@ -603,8 +633,8 @@ viewer.imageryLayers.addImageryProvider(
       }
     }
 
-    // 6. 載入氣象與場次資料
-    async function fetchWithTimeout(url, timeoutMs = 4500) {
+    // 6. 串接 GAS v4.2.9 真實火場 API（支援 15 秒即時輪詢與 stateHash 防閃爍）
+    async function fetchWithTimeout(url, timeoutMs = 8000) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -614,69 +644,96 @@ viewer.imageryLayers.addImageryProvider(
       }
     }
 
-    async function initSceneData() {
-      addFireOrigin(INIT_LAT, INIT_LNG);
+    function renderFallbackMockScene() {
+      clearTacticalEntities();
+      addFireOrigin(currentLat, currentLng, "示範起火點");
+      const mockHydrants = [];
+      for (let i = 0; i < 13; i++) {
+        const ang = (i * (360 / 13)) * Math.PI / 180;
+        const r = 0.00055 + (i % 3) * 0.00022;
+        mockHydrants.push({
+          slot: i + 1,
+          lat: currentLat + Math.cos(ang) * r,
+          lng: currentLng + Math.sin(ang) * r,
+          status: i === 1 ? "OCCUPIED" : (i === 4 ? "UNAVAILABLE" : "FREE"),
+          unit: i === 1 ? "安平11車" : ""
+        });
+      }
+      addHydrantMarkers(mockHydrants);
+      addWindAndPlume(currentLat, currentLng, 225, 2.5);
+      document.getElementById("weatherHud").textContent += "（示範模式）";
       flyPreset("top");
+    }
 
-      let windDeg = 225;
-      let windSpeed = 2.5;
-      let hydrants = [];
-      let weatherLoaded = false;
+    async function syncSceneFromGas(isInitial) {
+      const hasValidGasUrl = /^https:\/\/script\.google\.com\/macros\/s\/.+/.test(GAS_API_URL)
+        && GAS_API_URL.indexOf("請替換成你的") === -1;
+
+      if (!CHAT_ID || !hasValidGasUrl) {
+        if (isInitial) {
+          renderFallbackMockScene();
+          showToast(CHAT_ID ? "請先於 index.html 填入 GAS 部署網址" : "目前為示範模式（請由 LINE 輸入「查3D」開啟）");
+        }
+        return;
+      }
+
+      const qs = new URLSearchParams({ action: "scene", chatId: CHAT_ID });
+      if (SESSION_ID) qs.set("sessionId", SESSION_ID);
+      else qs.set("index", SESSION_INDEX);
+      if (API_TOKEN) qs.set("token", API_TOKEN);
 
       try {
-        const wRes = await fetchWithTimeout(
-          `https://api.open-meteo.com/v1/forecast?latitude=${INIT_LAT}&longitude=${INIT_LNG}&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=ms`
-        );
-        if (wRes.ok) {
-          const wJson = await wRes.json();
-          if (wJson.current && typeof wJson.current.wind_direction_10m === "number") {
-            windDeg = wJson.current.wind_direction_10m;
-            windSpeed = wJson.current.wind_speed_10m;
-            weatherLoaded = true;
+        const res = await fetchWithTimeout(`${GAS_API_URL}?${qs.toString()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const sJson = await res.json();
+
+        if (!sJson || !sJson.ok) {
+          if (isInitial) {
+            renderFallbackMockScene();
+            showToast(sJson && sJson.message ? sJson.message : "查無運作中火場");
           }
+          return;
         }
-      } catch (e) {
-        console.warn("氣象查詢逾時或失敗，使用預設風向：", e);
-      }
 
-      if (GAS_API_URL && CHAT_ID) {
-        try {
-          const sRes = await fetchWithTimeout(`${GAS_API_URL}?action=scene&chatId=${encodeURIComponent(CHAT_ID)}`);
-          if (sRes.ok) {
-            const sJson = await sRes.json();
-            if (Array.isArray(sJson.hydrants)) hydrants = sJson.hydrants;
-            if (sJson.wind && typeof sJson.wind.deg === "number") {
-              windDeg = sJson.wind.deg;
-              windSpeed = sJson.wind.speed || windSpeed;
-              weatherLoaded = true;
-            }
-          }
-        } catch (e) {
-          console.warn("GAS 場次載入失敗，改用示範點位：", e);
+        // 狀態無異動時跳過重繪
+        if (!isInitial && sJson.stateHash && sJson.stateHash === lastStateHash) return;
+        lastStateHash = sJson.stateHash || "";
+
+        if (sJson.center && isFinite(sJson.center.lat) && isFinite(sJson.center.lng)) {
+          currentLat = Number(sJson.center.lat);
+          currentLng = Number(sJson.center.lng);
         }
-      }
 
-      if (hydrants.length === 0) {
-        for (let i = 0; i < 13; i++) {
-          const ang = (i * (360 / 13)) * Math.PI / 180;
-          const r = 0.00055 + (i % 3) * 0.00022;
-          hydrants.push({
-            lat: INIT_LAT + Math.cos(ang) * r,
-            lng: INIT_LNG + Math.sin(ang) * r,
-            status: i === 1 ? "OCCUPIED" : (i === 4 ? "UNAVAILABLE" : "FREE"),
-            unit: i === 1 ? "安平11車" : ""
-          });
+        const labelText = (sJson.center && sJson.center.label) ? sJson.center.label : INIT_LABEL;
+        document.getElementById("sceneTitle").textContent = labelText;
+
+        clearTacticalEntities();
+        addFireOrigin(currentLat, currentLng, labelText);
+        addHydrantMarkers(Array.isArray(sJson.hydrants) ? sJson.hydrants : []);
+        addTacticalMarkers(Array.isArray(sJson.markers) ? sJson.markers : []);
+
+        const wDeg = (sJson.weather && Number.isFinite(sJson.weather.upwindDeg)) ? sJson.weather.upwindDeg : 225;
+        const wSpd = (sJson.weather && Number.isFinite(sJson.weather.windSpeed)) ? sJson.weather.windSpeed : 2.5;
+        addWindAndPlume(currentLat, currentLng, wDeg, wSpd);
+
+        if (isInitial) {
+          flyPreset("top");
+          showToast(`已同步即時火場（${(sJson.hydrants || []).length} 支消防栓）`);
+        } else {
+          showToast("🔄 已即時同步最新水源與標註狀態");
         }
-      }
-
-      addHydrantMarkers(hydrants);
-      addWindAndPlume(INIT_LAT, INIT_LNG, windDeg, windSpeed);
-      if (!weatherLoaded) {
-        document.getElementById("weatherHud").textContent += "（預設參考）";
+      } catch (err) {
+        console.warn("GAS v4.2.9 同步失敗：", err);
+        if (isInitial) {
+          renderFallbackMockScene();
+          showToast("GAS 連線失敗（請確認部署權限為「所有人」）");
+        }
       }
     }
 
-    initSceneData();
+    // 啟動首次載入與每 15 秒即時輪詢
+    syncSceneFromGas(true);
+    setInterval(() => syncSceneFromGas(false), 15000);
   </script>
 </body>
 </html>
