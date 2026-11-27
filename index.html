@@ -185,7 +185,9 @@
     const API_TOKEN = (params.get("token") || DEFAULT_API_TOKEN).trim();
 
     const rawTileset = (params.get("tileset") || "").trim();
-    const INIT_TILESET = /^https?:\/\//i.test(rawTileset) ? rawTileset : "";
+    const INIT_TILESET = /^https?:\/\//i.test(rawTileset)
+  ? rawTileset
+  : "https://tainan-nlsc-proxy.fc731113.workers.dev/building/tiles3d/0/tileset.json";
     const ION_TOKEN = (params.get("ionToken") || "").trim();
     if (ION_TOKEN && typeof Cesium !== "undefined") {
       Cesium.Ion.defaultAccessToken = ION_TOKEN;
