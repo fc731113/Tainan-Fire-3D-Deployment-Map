@@ -210,15 +210,14 @@
 
     // 1. 串接 NLSC WMTS PHOTO2 正射航照底圖
     const nlscPhotoProvider = new Cesium.WebMapTileServiceImageryProvider({
-      url: "https://wmts.nlsc.gov.tw/wmts/PHOTO2/{Style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}",
-      layer: "PHOTO2",
-      style: "default",
-      format: "image/jpeg",
-      tileMatrixSetID: "GoogleMapsCompatible",
-      tilingScheme: new Cesium.WebMercatorTilingScheme(),
-      maximumLevel: 19,
-      credit: new Cesium.Credit("內政部國土測繪中心 NLSC PHOTO2")
-    });
+  url: "https://wmts.nlsc.gov.tw/wmts/PHOTO_MIX/default/GoogleMapsCompatible/{TileMatrix}/{TileRow}/{TileCol}",
+  layer: "PHOTO_MIX",
+  style: "default",
+  format: "image/jpeg",
+  tileMatrixSetID: "GoogleMapsCompatible",
+  maximumLevel: 20,
+  credit: "內政部國土測繪中心 NLSC PHOTO_MIX"
+});
 
     const viewer = new Cesium.Viewer("cesiumContainer", {
       animation: false,
@@ -235,10 +234,18 @@
       baseLayer: new Cesium.ImageryLayer(nlscPhotoProvider)
     });
 
-    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#0f172a");
-    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#1e293b");
-    viewer.scene.globe.depthTestAgainstTerrain = false;
-    viewer.scene.shadows = false;
+    viewer.imageryLayers.removeAll();
+viewer.imageryLayers.addImageryProvider(
+  new Cesium.WebMapTileServiceImageryProvider({
+    url: "https://wmts.nlsc.gov.tw/wmts/PHOTO_MIX/default/GoogleMapsCompatible/{TileMatrix}/{TileRow}/{TileCol}",
+    layer: "PHOTO_MIX",
+    style: "default",
+    format: "image/jpeg",
+    tileMatrixSetID: "GoogleMapsCompatible",
+    maximumLevel: 20,
+    credit: "內政部國土測繪中心 NLSC PHOTO_MIX"
+  })
+);
 
     // 2. 3D 建物樣式與載入
     function buildTileStyle(mode) {
